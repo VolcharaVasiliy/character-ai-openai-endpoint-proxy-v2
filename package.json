@@ -1,0 +1,12 @@
+{
+  "name": "character-ai-proxy",
+  "version": "1.0.0",
+  "description": "A proxy for Character AI to be deployed on Vercel.",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js"
+  },
+  "dependencies": {
+    "node-character-ai": "^1.3.2"
+  }
+}
