@@ -1,22 +1,8 @@
 {
   "version": 2,
-  "functions": {
-    "api/chat/completions.js": {
-      "maxDuration": 60
-    }
-  },
   "rewrites": [
-    {
-      "source": "/v1/chat/completions",
-      "destination": "/api/chat/completions"
-    },
-    {
-      "source": "/api/v1/chat/completions", 
-      "destination": "/api/chat/completions"
-    },
-    {
-      "source": "/",
-      "destination": "/public/index.html"
-    }
+    { "source": "/v1/chat/completions", "destination": "/api" },
+    { "source": "/api/v1/chat/completions", "destination": "/api" },
+    { "source": "/", "destination": "/api" }
   ]
 }
