@@ -1,9 +1,6 @@
 const fetch = require('node-fetch');
 const { v4: uuidv4 } = require('uuid');
 
-const CAI_URL = 'https://beta.character.ai';
-
-// CORS заголовки
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
@@ -11,37 +8,42 @@ const corsHeaders = {
   'Access-Control-Expose-Headers': 'X-Chat-Id, X-Character-Id'
 };
 
-// Кеш для сессий
-const sessions = new Map();
+// Кеш для хранения истории чатов
+const chatHistories = new Map();
 
-class CharacterAIClient {
-  constructor(token) {
-    this.token = token;
-    this.headers = {
-      'Authorization': `Token ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': 'https://character.ai/',
-      'Origin': 'https://character.ai'
+class CharacterAI {
+  constructor(accessToken) {
+    this.token = accessToken;
+    this.baseURL = 'https://beta.character.ai';
+  }
+
+  async getHeaders() {
+    return {
+      'authorization': `Token ${this.token}`,
+      'content-type': 'application/json',
+      'accept': '*/*',
+      'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+      'cache-control': 'no-cache',
+      'origin': 'https://character.ai',
+      'pragma': 'no-cache',
+      'referer': 'https://character.ai/',
+      'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-site',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     };
   }
 
-  async createOrContinueChat(characterId, chatId = null) {
+  async createChat(characterId) {
     try {
-      if (chatId) {
-        // Продолжаем существующий чат
-        return { 
-          characterId, 
-          chatId,
-          isNew: false 
-        };
-      }
-
-      // Создаем новый чат
-      const response = await fetch(`${CAI_URL}/chat/history/create/`, {
+      const headers = await this.getHeaders();
+      
+      const response = await fetch(`${this.baseURL}/chat/history/create/`, {
         method: 'POST',
-        headers: this.headers,
+        headers,
         body: JSON.stringify({
           character_external_id: characterId,
           history_external_id: null
@@ -49,108 +51,158 @@ class CharacterAIClient {
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Create chat error:', errorText);
         throw new Error(`Failed to create chat: ${response.status}`);
       }
 
       const data = await response.json();
-      
-      return {
-        characterId,
-        chatId: data.external_id || uuidv4(),
-        isNew: true
-      };
+      return data.external_id;
     } catch (error) {
       console.error('Error creating chat:', error);
-      // Возвращаем фейковый chatId если не получилось создать
-      return {
-        characterId,
-        chatId: `temp_${Date.now()}`,
-        isNew: true
-      };
+      throw error;
     }
   }
 
-  async sendMessage(characterId, chatId, message) {
+  async continueChat(characterId, historyId) {
     try {
-      // Генерируем уникальный ID для сообщения
-      const turnId = uuidv4();
+      const headers = await this.getHeaders();
       
-      // Основной запрос для отправки сообщения
-      const response = await fetch(`${CAI_URL}/chat/streaming/`, {
+      const response = await fetch(`${this.baseURL}/chat/history/continue/`, {
         method: 'POST',
-        headers: {
-          ...this.headers,
-          'Accept': 'text/event-stream',
-        },
+        headers,
         body: JSON.stringify({
           character_external_id: characterId,
-          history_external_id: chatId,
-          text: message,
-          turn_id: turnId,
-          regenerate: false,
-          tgt: 'internal_id',
+          history_external_id: historyId
+        })
+      });
+
+      if (!response.ok) {
+        // Если не можем продолжить чат, создаем новый
+        return await this.createChat(characterId);
+      }
+
+      const data = await response.json();
+      return historyId;
+    } catch (error) {
+      console.error('Error continuing chat:', error);
+      // Создаем новый чат если не можем продолжить
+      return await this.createChat(characterId);
+    }
+  }
+
+  async sendMessage(characterId, historyId, text) {
+    try {
+      const headers = await this.getHeaders();
+      const tgt = characterId;
+      
+      // Используем streaming endpoint
+      const response = await fetch(`${this.baseURL}/chat/streaming/`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'accept': 'text/event-stream'
+        },
+        body: JSON.stringify({
+          history_external_id: historyId,
+          character_external_id: characterId,
+          text: text,
+          tgt: tgt,
           ranking_method: 'random',
+          candidates_to_generate: 1,
+          user_name: 'User',
+          mock_response: false,
           staging: false,
           model_server_address: null,
           override_prefix: null,
           override_rank: null,
-          override_model_name: null,
+          rank_candidates: null,
+          filter_candidates: null,
           prefix_limit: null,
           prefix_token_limit: null,
+          livetune_coeff: null,
+          parent_msg_id: null,
+          initial_timeout: null,
+          enable_tti: true,
           temperature: 1.0,
-          top_p: 1.0
+          top_p: null,
+          base_model: 'c1.2'
         })
       });
 
       if (!response.ok) {
-        // Fallback на простой текстовый ответ
-        return await this.sendMessageFallback(characterId, message);
+        const errorText = await response.text();
+        console.error('Send message error:', errorText);
+        throw new Error(`Failed to send message: ${response.status}`);
       }
 
-      const text = await response.text();
+      const responseText = await response.text();
       
       // Парсим streaming response
-      const lines = text.split('\n');
-      let finalResponse = '';
+      const lines = responseText.split('\n');
+      let finalReply = '';
+      let lastData = null;
       
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
-            const data = JSON.parse(line.slice(6));
-            if (data.replies && data.replies.length > 0) {
-              finalResponse = data.replies[0].text;
-            } else if (data.text) {
-              finalResponse = data.text;
+            const jsonStr = line.slice(6);
+            if (jsonStr && jsonStr !== '[DONE]') {
+              const data = JSON.parse(jsonStr);
+              
+              // Ищем текст ответа в разных местах
+              if (data.replies && data.replies.length > 0) {
+                finalReply = data.replies[0].text;
+                lastData = data;
+              } else if (data.text) {
+                finalReply = data.text;
+                lastData = data;
+              } else if (data.final_text) {
+                finalReply = data.final_text;
+                lastData = data;
+              }
             }
           } catch (e) {
-            // Игнорируем ошибки парсинга отдельных строк
+            // Пропускаем строки, которые не являются JSON
+            console.log('Non-JSON line:', line);
           }
         }
       }
 
-      return finalResponse || 'Я думаю...';
+      if (!finalReply) {
+        // Если не нашли ответ в streaming, попробуем обычный endpoint
+        return await this.sendMessageFallback(characterId, historyId, text);
+      }
+
+      return finalReply;
 
     } catch (error) {
-      console.error('Error sending message:', error);
-      return await this.sendMessageFallback(characterId, message);
+      console.error('Error in sendMessage:', error);
+      // Fallback на альтернативный метод
+      return await this.sendMessageFallback(characterId, historyId, text);
     }
   }
 
-  async sendMessageFallback(characterId, message) {
-    // Упрощенный запрос без streaming
+  async sendMessageFallback(characterId, historyId, text) {
     try {
-      const response = await fetch(`${CAI_URL}/chat/character/`, {
+      const headers = await this.getHeaders();
+      
+      const response = await fetch(`${this.baseURL}/chat/character/`, {
         method: 'POST',
-        headers: this.headers,
+        headers,
         body: JSON.stringify({
+          history_external_id: historyId,
           character_external_id: characterId,
-          text: message,
-          num_candidates: 1
+          text: text,
+          enable_tti: true,
+          num_candidates: 1,
+          user_name: 'User'
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Request failed: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Fallback failed: ${errorText}`);
       }
 
       const data = await response.json();
@@ -161,26 +213,12 @@ class CharacterAIClient {
         return data.text;
       }
       
-      return 'Извините, я не могу ответить прямо сейчас.';
+      throw new Error('No reply in response');
       
     } catch (error) {
       console.error('Fallback error:', error);
-      // Генерируем фейковый ответ для тестирования
-      return this.generateFakeResponse(message);
+      throw error;
     }
-  }
-
-  generateFakeResponse(message) {
-    // Простые фейковые ответы для тестирования
-    const responses = [
-      "Это интересный вопрос! Давайте поговорим об этом подробнее.",
-      "Я понимаю, что вы имеете в виду. Расскажите больше.",
-      "Хм, дайте мне подумать об этом...",
-      "Это заставляет меня задуматься. А что вы об этом думаете?",
-      "Интересная мысль! Продолжайте."
-    ];
-    
-    return responses[Math.floor(Math.random() * responses.length)];
   }
 }
 
@@ -190,7 +228,6 @@ module.exports = async (req, res) => {
     res.setHeader(key, value);
   });
 
-  // Обработка preflight запросов
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -204,7 +241,7 @@ module.exports = async (req, res) => {
     if (!authorization || !authorization.startsWith('Bearer ')) {
       return res.status(401).json({ 
         error: {
-          message: 'Missing or invalid authorization header',
+          message: 'Missing authorization header',
           type: 'invalid_request_error',
           code: 'invalid_api_key'
         }
@@ -214,44 +251,48 @@ module.exports = async (req, res) => {
     const token = authorization.replace('Bearer ', '');
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
-    // Парсим токен (формат: accessToken:characterId:chatId?)
+    // Парсим токен
     const [accessToken, characterId, chatId] = token.split(':');
     
     if (!accessToken || !characterId) {
       return res.status(400).json({ 
         error: {
-          message: 'Invalid token format. Expected: accessToken:characterId:chatId',
-          type: 'invalid_request_error',
-          code: 'invalid_token_format'
+          message: 'Invalid token format. Use: accessToken:characterId:chatId',
+          type: 'invalid_request_error'
         }
       });
     }
 
-    // Получаем или создаем клиент
-    const sessionKey = `${accessToken}_${characterId}`;
-    let client = sessions.get(sessionKey);
+    // Создаем клиент
+    const client = new CharacterAI(accessToken);
     
-    if (!client) {
-      client = new CharacterAIClient(accessToken);
-      sessions.set(sessionKey, client);
+    // Получаем или создаем историю чата
+    let historyId = chatId;
+    
+    if (!historyId) {
+      // Проверяем кеш
+      const cacheKey = `${accessToken}_${characterId}`;
+      historyId = chatHistories.get(cacheKey);
       
-      // Очищаем кеш через 30 минут
-      setTimeout(() => sessions.delete(sessionKey), 30 * 60 * 1000);
+      if (!historyId) {
+        // Создаем новый чат
+        historyId = await client.createChat(characterId);
+        chatHistories.set(cacheKey, historyId);
+      }
+    } else {
+      // Продолжаем существующий чат
+      historyId = await client.continueChat(characterId, historyId);
     }
 
-    // Создаем или продолжаем чат
-    const chatSession = await client.createOrContinueChat(characterId, chatId);
-    
-    // Извлекаем последнее сообщение пользователя
+    // Извлекаем сообщение пользователя
     const messages = body.messages || [];
     const lastUserMessage = messages.filter(m => m.role === 'user').pop();
     
     if (!lastUserMessage) {
       return res.status(400).json({ 
         error: {
-          message: 'No user message found in request',
-          type: 'invalid_request_error',
-          code: 'missing_user_message'
+          message: 'No user message found',
+          type: 'invalid_request_error'
         }
       });
     }
@@ -259,11 +300,11 @@ module.exports = async (req, res) => {
     // Отправляем сообщение
     const responseText = await client.sendMessage(
       characterId, 
-      chatSession.chatId, 
+      historyId, 
       lastUserMessage.content
     );
 
-    // Формируем ответ в формате OpenAI
+    // Формируем ответ OpenAI
     const openAIResponse = {
       id: `chatcmpl-${Date.now()}`,
       object: 'chat.completion',
@@ -284,19 +325,19 @@ module.exports = async (req, res) => {
       }
     };
 
-    // Добавляем информацию о чате в заголовки
-    res.setHeader('X-Chat-Id', chatSession.chatId);
+    // Добавляем заголовки с информацией о чате
+    res.setHeader('X-Chat-Id', historyId);
     res.setHeader('X-Character-Id', characterId);
     
     return res.status(200).json(openAIResponse);
 
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Main error:', error);
     return res.status(500).json({ 
       error: {
         message: error.message || 'Internal server error',
         type: 'internal_error',
-        code: 'character_ai_error'
+        details: error.toString()
       }
     });
   }
