@@ -1,14 +1,15 @@
 {
-  "name": "cai-openai-proxy",
-  "version": "3.0.0",
-  "description": "Character.AI to OpenAI API proxy",
+  "name": "characterai-openai-proxy",
+  "version": "1.0.0",
+  "description": "OpenAI-compatible endpoint for Character.AI",
+  "main": "api/chat/completions.js",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod"
   },
   "dependencies": {
-    "uuid": "^9.0.1",
-    "node-fetch": "^2.7.0"
+    "cainode": "^1.2.9",
+    "cors": "^2.8.5"
   },
   "engines": {
     "node": ">=18.x"
