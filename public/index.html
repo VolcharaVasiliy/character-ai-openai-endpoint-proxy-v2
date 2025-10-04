@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Character.AI OpenAI Proxy</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 { color: #333; margin-bottom: 20px; }
+        .status { 
+            background: #10b981; 
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            display: inline-block;
+            font-weight: 600;
+        }
+        .endpoint {
+            background: #f3f4f6;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+        .config {
+            background: #fef3c7;
+            border: 2px solid #fbbf24;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Character.AI OpenAI Proxy</h1>
+        <div class="status">✅ Server Running</div>
+        
+        <div class="config">
+            <h2>📋 Настройки для Risu AI:</h2>
+            <p><strong>Model:</strong> Custom API</p>
+            <p><strong>Format:</strong> OpenAI Compatible</p>
+            <p><strong>URL:</strong> <code id="apiUrl"></code></p>
+            <p><strong>Key/Password:</strong> <code>Ваш Character.AI токен или guest</code></p>
+            <p><strong>Request Model:</strong> <code>ID персонажа из Character.AI</code></p>
+            <p><strong>Streaming:</strong> On (поддерживается)</p>
+        </div>
+        
+        <div class="endpoint">
+            <h3>API Endpoint:</h3>
+            <p>POST <span id="endpoint"></span></p>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <h3>✨ Тестирование:</h3>
+            <p>Откройте консоль браузера (F12) и выполните:</p>
+            <pre style="background: #1e293b; color: #e2e8f0; padding: 15px; border-radius: 8px; overflow-x: auto;">
+fetch(window.location.origin + '/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer guest'
+    },
+    body: JSON.stringify({
+        model: 'YOUR_CHARACTER_ID',
+        messages: [
+            { role: 'user', content: 'Привет!' }
+        ]
+    })
+}).then(r => r.json()).then(console.log)
+            </pre>
+        </div>
+    </div>
+    
+    <script>
+        const baseUrl = window.location.origin;
+        document.getElementById('apiUrl').textContent = baseUrl + '/v1/chat/completions';
+        document.getElementById('endpoint').textContent = baseUrl + '/v1/chat/completions';
+        
+        // Проверка статуса
+        fetch(baseUrl + '/v1/chat/completions')
+            .then(r => r.json())
+            .then(data => console.log('API Status:', data))
+            .catch(err => console.error('API Error:', err));
+    </script>
+</body>
+</html>
