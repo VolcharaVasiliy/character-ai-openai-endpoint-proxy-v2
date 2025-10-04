@@ -1,142 +1,260 @@
 const { v4: uuidv4 } = require('uuid');
+const fetch = require('node-fetch');
 
 // Кэш для хранения сессий
 const sessionCache = new Map();
+const chatHistories = new Map();
 
 // CORS заголовки
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json'
+  'Access-Control-Allow-Credentials': 'true'
 };
 
-// Character.AI API класс
-class CharacterAIClient {
-  constructor(token) {
-    this.token = token;
+// Парсинг cookies из токена Character.AI
+function parseCookies(cookieString) {
+  const cookies = {};
+  if (cookieString) {
+    cookieString.split(';').forEach(cookie => {
+      const [key, value] = cookie.trim().split('=');
+      if (key && value) {
+        cookies[key] = value;
+      }
+    });
+  }
+  return cookies;
+}
+
+// Character.AI API класс  
+class CharacterAIAPI {
+  constructor(accessToken) {
+    this.accessToken = accessToken;
     this.baseURL = 'https://beta.character.ai';
     this.headers = {
-      'Authorization': `Token ${token}`,
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      'Authorization': `Token ${accessToken}`,
+      'Origin': 'https://character.ai',
+      'Referer': 'https://character.ai/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+      'sec-ch-ua': '"Chromium";v="118", "Google Chrome";v="118", "Not=A?Brand";v="99"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-origin'
     };
   }
-  
-  async createOrContinueChat(characterId, historyId = null) {
+
+  async fetchWithRetry(url, options, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(url, options);
+        
+        if (response.status === 429) {
+          // Rate limit - ждем перед повтором
+          await new Promise(resolve => setTimeout(resolve, (i + 1) * 2000));
+          continue;
+        }
+        
+        return response;
+      } catch (error) {
+        if (i === retries - 1) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+
+  async getCharacterInfo(characterId) {
     try {
-      // Если есть история, продолжаем чат
-      if (historyId) {
-        return { characterId, historyId };
-      }
-      
-      // Создаем новый чат
-      const response = await fetch(`${this.baseURL}/chat/history/create/`, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify({
-          character_external_id: characterId
-        })
-      });
-      
+      const response = await this.fetchWithRetry(
+        `${this.baseURL}/chat/character/info/`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({
+            external_id: characterId
+          })
+        }
+      );
+
       if (!response.ok) {
-        throw new Error(`Failed to create chat: ${response.statusText}`);
+        console.error('Failed to get character info:', response.status);
+        return null;
       }
-      
+
       const data = await response.json();
-      return {
-        characterId,
-        historyId: data.external_id
-      };
+      return data.character;
     } catch (error) {
-      console.error('Chat creation error:', error);
+      console.error('Get character info error:', error);
+      return null;
+    }
+  }
+
+  async createChat(characterId) {
+    try {
+      const response = await this.fetchWithRetry(
+        `${this.baseURL}/chat/history/create/`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({
+            character_external_id: characterId,
+            history_external_id: null
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to create chat:', response.status, errorText);
+        throw new Error(`Failed to create chat: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.external_id;
+    } catch (error) {
+      console.error('Create chat error:', error);
       throw error;
     }
   }
-  
-  async sendMessage(characterId, historyId, message) {
+
+  async continueChat(characterId, historyId) {
     try {
-      const response = await fetch(`${this.baseURL}/chat/streaming/`, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify({
-          history_external_id: historyId,
-          character_external_id: characterId,
-          text: message,
-          tgt: characterId,
-          ranking_method: 'random',
-          staging: false,
-          model_server_address: null,
-          override_prefix: null,
-          override_rank: null,
-          rank_candidates: null,
-          filter_candidates: null,
-          enable_tti: true,
-          initial_timeout: null,
-          insert_beginning: null,
-          translate_candidates: null,
-          stream_every_n_steps: 16,
-          chunks_to_pad: 8,
-          is_proactive: false
-        })
-      });
-      
+      const response = await this.fetchWithRetry(
+        `${this.baseURL}/chat/history/continue/`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({
+            character_external_id: characterId,
+            history_external_id: historyId
+          })
+        }
+      );
+
       if (!response.ok) {
-        throw new Error(`Failed to send message: ${response.statusText}`);
+        console.error('Failed to continue chat:', response.status);
+        // Если не удалось продолжить, создаем новый чат
+        return await this.createChat(characterId);
       }
-      
+
+      const data = await response.json();
+      return data.external_id || historyId;
+    } catch (error) {
+      console.error('Continue chat error:', error);
+      // Fallback к созданию нового чата
+      return await this.createChat(characterId);
+    }
+  }
+
+  async sendMessage(characterId, historyId, text) {
+    try {
+      // Отправляем сообщение через streaming endpoint
+      const response = await this.fetchWithRetry(
+        `${this.baseURL}/chat/streaming/`,
+        {
+          method: 'POST',
+          headers: {
+            ...this.headers,
+            'Accept': 'text/event-stream'
+          },
+          body: JSON.stringify({
+            history_external_id: historyId,
+            character_external_id: characterId,
+            text: text,
+            tgt: characterId,
+            ranking_method: 'random',
+            staging: false,
+            model_server_address: null,
+            override_prefix: null,
+            override_rank: null,
+            rank_candidates: null,
+            filter_candidates: null,
+            prefix_limit: null,
+            prefix_token_limit: null,
+            livetune_coeff: null,
+            stream_params: null,
+            enable_tti: true,
+            initial_timeout: null,
+            insert_beginning: null,
+            translate_candidates: null,
+            stream_every_n_steps: 16,
+            chunks_to_pad: 8,
+            is_proactive: false
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to send message:', response.status, errorText);
+        throw new Error(`Failed to send message: ${response.status}`);
+      }
+
       // Читаем streaming response
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let fullResponse = '';
+      const responseText = await response.text();
+      const lines = responseText.split('\n');
       
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      let finalReply = '';
+      let lastValidReply = '';
+      
+      for (const line of lines) {
+        if (line.trim() === '') continue;
         
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-        
-        for (const line of lines) {
-          if (line.trim() === '') continue;
+        try {
+          const data = JSON.parse(line);
           
-          try {
-            const data = JSON.parse(line);
-            if (data.replies && data.replies.length > 0) {
-              fullResponse = data.replies[0].text;
-            }
-          } catch (e) {
-            // Игнорируем не-JSON строки
+          if (data.replies && data.replies.length > 0) {
+            lastValidReply = data.replies[0].text;
           }
+          
+          if (data.is_final_chunk) {
+            finalReply = data.replies[0].text;
+            break;
+          }
+        } catch (e) {
+          // Игнорируем не-JSON строки
         }
       }
       
-      return fullResponse || 'Не удалось получить ответ';
+      return finalReply || lastValidReply || 'Извините, не удалось получить ответ.';
     } catch (error) {
       console.error('Send message error:', error);
       throw error;
     }
   }
-}
 
-// Получение или создание клиента
-function getOrCreateClient(token) {
-  const cacheKey = `client_${token}`;
-  
-  if (sessionCache.has(cacheKey)) {
-    return sessionCache.get(cacheKey);
+  // Альтернативный метод для отправки сообщения (без streaming)
+  async sendMessageSimple(characterId, text) {
+    try {
+      const response = await this.fetchWithRetry(
+        `${this.baseURL}/chat/send_message/`,
+        {
+          method: 'POST',
+          headers: this.headers,
+          body: JSON.stringify({
+            character_external_id: characterId,
+            text: text,
+            tgt: characterId
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to send message: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.replies[0].text;
+    } catch (error) {
+      console.error('Send message simple error:', error);
+      throw error;
+    }
   }
-  
-  const client = new CharacterAIClient(token);
-  sessionCache.set(cacheKey, client);
-  
-  // Очистка кэша через 30 минут
-  setTimeout(() => {
-    sessionCache.delete(cacheKey);
-  }, 30 * 60 * 1000);
-  
-  return client;
 }
 
 // Парсинг модели для получения ID персонажа
@@ -147,6 +265,25 @@ function parseModelId(model) {
   return model;
 }
 
+// Получение или создание клиента
+function getOrCreateClient(token) {
+  const cacheKey = `client_${token}`;
+  
+  if (sessionCache.has(cacheKey)) {
+    return sessionCache.get(cacheKey);
+  }
+  
+  const client = new CharacterAIAPI(token);
+  sessionCache.set(cacheKey, client);
+  
+  // Очистка кэша через 30 минут
+  setTimeout(() => {
+    sessionCache.delete(cacheKey);
+  }, 30 * 60 * 1000);
+  
+  return client;
+}
+
 // Основной обработчик
 module.exports = async (req, res) => {
   // Установка CORS заголовков
@@ -154,14 +291,19 @@ module.exports = async (req, res) => {
     res.setHeader(key, value);
   });
   
-  // Обработка preflight запроса
+  // Обработка OPTIONS запроса для CORS
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
   
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json({ 
+      error: {
+        message: 'Method not allowed',
+        type: 'invalid_request_error'
+      }
+    });
     return;
   }
   
@@ -178,7 +320,7 @@ module.exports = async (req, res) => {
       return;
     }
     
-    const token = authHeader.substring('Bearer '.length);
+    const token = authHeader.substring('Bearer '.length).trim();
     const body = req.body;
     
     // Валидация тела запроса
@@ -215,38 +357,59 @@ module.exports = async (req, res) => {
     const client = getOrCreateClient(token);
     
     // Получение или создание истории чата
-    const sessionKey = `session_${token}_${characterId}`;
-    let session = sessionCache.get(sessionKey);
+    const historyKey = `history_${token}_${characterId}`;
+    let historyId = chatHistories.get(historyKey);
     
-    if (!session) {
-      session = await client.createOrContinueChat(characterId);
-      sessionCache.set(sessionKey, session);
+    try {
+      if (!historyId) {
+        // Пробуем создать новый чат
+        historyId = await client.createChat(characterId);
+        chatHistories.set(historyKey, historyId);
+      } else {
+        // Пробуем продолжить существующий чат
+        historyId = await client.continueChat(characterId, historyId);
+        chatHistories.set(historyKey, historyId);
+      }
+    } catch (error) {
+      console.error('Chat creation/continuation failed:', error);
+      // Пробуем создать новый чат как fallback
+      historyId = await client.createChat(characterId);
+      chatHistories.set(historyKey, historyId);
     }
     
     // Отправка сообщения и получение ответа
-    const response = await client.sendMessage(
-      characterId,
-      session.historyId,
-      userMessage.content
-    );
+    let response;
+    try {
+      if (historyId) {
+        response = await client.sendMessage(characterId, historyId, userMessage.content);
+      } else {
+        // Fallback к простому методу
+        response = await client.sendMessageSimple(characterId, userMessage.content);
+      }
+    } catch (error) {
+      console.error('Message sending failed:', error);
+      // Последняя попытка с новым чатом
+      historyId = await client.createChat(characterId);
+      chatHistories.set(historyKey, historyId);
+      response = await client.sendMessage(characterId, historyId, userMessage.content);
+    }
     
     // Формирование ответа в формате OpenAI
     const completionId = `chatcmpl-${uuidv4()}`;
     const created = Math.floor(Date.now() / 1000);
     
     if (stream) {
-      // Streaming response (Server-Sent Events)
+      // Server-Sent Events для streaming
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
       
-      // Разбиваем ответ на части для имитации streaming
+      // Эмулируем streaming, разбивая ответ на слова
       const words = response.split(' ');
-      const chunkSize = 5; // Слов в чанке
       
-      for (let i = 0; i < words.length; i += chunkSize) {
-        const chunk = words.slice(i, i + chunkSize).join(' ') + ' ';
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i] + (i < words.length - 1 ? ' ' : '');
         const streamData = {
           id: completionId,
           object: 'chat.completion.chunk',
@@ -255,16 +418,19 @@ module.exports = async (req, res) => {
           choices: [{
             index: 0,
             delta: {
-              content: chunk
+              content: word
             },
             finish_reason: null
           }]
         };
         
         res.write(`data: ${JSON.stringify(streamData)}\n\n`);
+        
+        // Небольшая задержка для эмуляции реального streaming
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
       
-      // Финальный чанк
+      // Отправляем финальный чанк
       const finalChunk = {
         id: completionId,
         object: 'chat.completion.chunk',
@@ -281,7 +447,7 @@ module.exports = async (req, res) => {
       res.write('data: [DONE]\n\n');
       res.end();
     } else {
-      // Regular response
+      // Обычный ответ
       const completion = {
         id: completionId,
         object: 'chat.completion',
@@ -296,9 +462,9 @@ module.exports = async (req, res) => {
           finish_reason: 'stop'
         }],
         usage: {
-          prompt_tokens: Math.floor(userMessage.content.length / 4),
-          completion_tokens: Math.floor(response.length / 4),
-          total_tokens: Math.floor((userMessage.content.length + response.length) / 4)
+          prompt_tokens: Math.ceil(userMessage.content.length / 4),
+          completion_tokens: Math.ceil(response.length / 4),
+          total_tokens: Math.ceil((userMessage.content.length + response.length) / 4)
         }
       };
       
@@ -309,8 +475,7 @@ module.exports = async (req, res) => {
     res.status(500).json({ 
       error: {
         message: error.message || 'Internal server error',
-        type: 'internal_error',
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        type: 'internal_error'
       }
     });
   }
