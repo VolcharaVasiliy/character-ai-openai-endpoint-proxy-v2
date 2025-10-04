@@ -1,20 +1,18 @@
 const CharacterAI = require('node_characterai');
-const cors = require('cors');
 
-const corsMiddleware = cors({ origin: '*' });
-
-function runMiddleware(req, res, fn) {
-  return new Promise((resolve, reject) => {
-    fn(req, res, (result) => {
-      if (result instanceof Error) return reject(result);
-      return resolve(result);
-    });
-  });
-}
+const headers = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json'
+};
 
 module.exports = async (req, res) => {
-  await runMiddleware(req, res, corsMiddleware);
-  
+  // Устанавливаем CORS заголовки
+  Object.entries(headers).forEach(([key, value]) => {
+    res.setHeader(key, value);
+  });
+
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -29,14 +27,18 @@ module.exports = async (req, res) => {
     const client = new CharacterAI();
     await client.authenticateWithToken(token);
     
-    // Получаем список чатов
-    const chats = await client.fetchRecentChats();
+    // Получаем информацию о пользователе
+    const user = await client.fetchUser();
     
     return res.status(200).json({
       success: true,
-      chats: chats || []
+      user: user || {},
+      message: 'Token is valid'
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ 
+      error: error.message,
+      success: false 
+    });
   }
 };
