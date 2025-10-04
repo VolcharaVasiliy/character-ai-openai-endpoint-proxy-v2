@@ -1,8 +1,8 @@
-import { CAINode } from 'cainode';
-import Cors from 'cors';
+const CharacterAI = require("node_characterai");
+const cors = require("cors");
 
 // Настройка CORS
-const cors = Cors({
+const corsMiddleware = cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   origin: '*',
   credentials: true,
@@ -22,6 +22,7 @@ function runMiddleware(req, res, fn) {
 
 // Хранилище активных клиентов (в памяти для каждого инстанса)
 const clientsCache = new Map();
+const conversationHistory = new Map(); // Хранение истории диалогов
 
 // Функция для парсинга character_id из модели
 function parseModelInfo(model) {
@@ -34,29 +35,21 @@ function parseModelInfo(model) {
 }
 
 // Функция для сохранения состояния диалога
-function saveConversationState(userId, characterId, chatId, history) {
+function saveConversationState(userId, characterId, chatId, messages) {
   const key = `${userId}:${characterId}`;
   const state = {
     chatId,
-    history: history.slice(-50), // Сохраняем последние 50 сообщений
+    messages: messages.slice(-100), // Сохраняем последние 100 сообщений
     lastActivity: Date.now()
   };
   
-  // Для Vercel используем глобальную переменную
-  if (!global.conversationStates) {
-    global.conversationStates = new Map();
-  }
-  global.conversationStates.set(key, state);
+  conversationHistory.set(key, state);
 }
 
 // Функция для загрузки состояния диалога
 function loadConversationState(userId, characterId) {
-  if (!global.conversationStates) {
-    return null;
-  }
-  
   const key = `${userId}:${characterId}`;
-  const state = global.conversationStates.get(key);
+  const state = conversationHistory.get(key);
   
   // Проверяем, не устарело ли состояние (24 часа)
   if (state && (Date.now() - state.lastActivity) < 86400000) {
@@ -66,9 +59,9 @@ function loadConversationState(userId, characterId) {
   return null;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Применяем CORS
-  await runMiddleware(req, res, cors);
+  await runMiddleware(req, res, corsMiddleware);
 
   // Обработка OPTIONS запроса
   if (req.method === 'OPTIONS') {
@@ -108,20 +101,25 @@ export default async function handler(req, res) {
     const cacheKey = `${userId}:${token}`;
 
     // Получаем или создаем клиента
-    let client = clientsCache.get(cacheKey);
+    let characterAI = clientsCache.get(cacheKey);
     
-    if (!client || !client.isReady) {
-      client = new CAINode();
+    if (!characterAI) {
+      characterAI = new CharacterAI();
+      
+      // Настраиваем клиент перед авторизацией
+      characterAI.requester.puppeteer = false; // Отключаем Puppeteer для Vercel
+      characterAI.requester.usePlus = false; // Используем обычную версию
       
       try {
-        await client.login(token);
-        clientsCache.set(cacheKey, client);
+        await characterAI.authenticateWithToken(token);
+        clientsCache.set(cacheKey, characterAI);
         
         // Очищаем старые клиенты каждые 30 минут
         setTimeout(() => {
           clientsCache.delete(cacheKey);
         }, 30 * 60 * 1000);
       } catch (error) {
+        console.error('Authentication error:', error);
         return res.status(401).json({ error: 'Failed to authenticate with Character.AI' });
       }
     }
@@ -135,68 +133,46 @@ export default async function handler(req, res) {
     // Загружаем или создаем состояние диалога
     let conversationState = loadConversationState(userId, characterId);
     let chatId = providedChatId || (conversationState ? conversationState.chatId : null);
-    let isNewChat = !chatId;
-    
-    // Подключаемся к персонажу или продолжаем чат
-    if (!chatId) {
-      // Создаем новый чат
-      await client.character.connect(characterId);
-      const chatInfo = await client.character.create_new_conversation();
-      chatId = chatInfo.chat_id;
-      
-      // Получаем приветственное сообщение
-      const greeting = chatInfo.messages?.[0];
-      if (greeting) {
-        conversationState = {
-          chatId,
-          history: [{
-            role: 'assistant',
-            content: greeting.text || greeting.content || ''
-          }],
-          lastActivity: Date.now()
-        };
-      }
-    } else {
-      // Продолжаем существующий чат
-      await client.character.connect(characterId);
-      
-      // Загружаем историю, если есть
-      if (conversationState && conversationState.history) {
-        // История уже загружена из состояния
-      } else {
-        // Пытаемся загрузить историю из Character.AI
-        try {
-          const history = await client.chat.history_conversation_list(characterId);
-          if (history && Array.isArray(history)) {
-            conversationState = {
-              chatId,
-              history: history.map(msg => ({
-                role: msg.is_user ? 'user' : 'assistant',
-                content: msg.text
-              })),
-              lastActivity: Date.now()
-            };
-          }
-        } catch (historyError) {
-          console.error('Failed to load history:', historyError);
-          conversationState = { chatId, history: [], lastActivity: Date.now() };
-        }
-      }
-    }
-
-    // Отправляем сообщение
-    let responseText = '';
+    let chat;
     
     try {
-      const response = await client.character.send_message(
-        userMessage.content,
-        { 
-          char_id: characterId,
-          chat_id: chatId,
-          streaming: stream
+      if (!chatId) {
+        // Создаем новый чат
+        chat = await characterAI.createOrContinueChat(characterId);
+        
+        // Сохраняем ID чата
+        if (chat && chat.externalId) {
+          chatId = chat.externalId;
         }
+      } else {
+        // Продолжаем существующий чат
+        chat = await characterAI.createOrContinueChat(characterId, chatId);
+      }
+
+      if (!chat) {
+        throw new Error('Failed to create or continue chat');
+      }
+
+      // Отправляем сообщение и получаем ответ
+      const response = await chat.sendAndAwaitResponse(userMessage.content, true);
+      
+      if (!response || !response.text) {
+        throw new Error('Invalid response from Character.AI');
+      }
+
+      const responseText = response.text;
+
+      // Обновляем историю
+      const messageHistory = conversationState ? conversationState.messages : [];
+      messageHistory.push(
+        { role: 'user', content: userMessage.content },
+        { role: 'assistant', content: responseText }
       );
 
+      // Сохраняем состояние
+      saveConversationState(userId, characterId, chatId, messageHistory);
+
+      // Формируем ответ в формате OpenAI
       if (stream) {
         // Для стриминга настраиваем SSE
         res.writeHead(200, {
@@ -205,11 +181,10 @@ export default async function handler(req, res) {
           'Connection': 'keep-alive'
         });
 
-        // Отправляем чанки по мере получения
-        for await (const chunk of response) {
-          const text = chunk.text || chunk.content || '';
-          responseText += text;
-          
+        // Эмулируем стриминг, разбивая ответ на части
+        const chunks = responseText.match(/.{1,20}/g) || [];
+        
+        for (const chunk of chunks) {
           const data = {
             id: `chatcmpl-${Date.now()}`,
             object: 'chat.completion.chunk',
@@ -217,38 +192,41 @@ export default async function handler(req, res) {
             model: model,
             choices: [{
               index: 0,
-              delta: { content: text },
+              delta: { content: chunk },
               finish_reason: null
             }]
           };
           
           res.write(`data: ${JSON.stringify(data)}\n\n`);
+          
+          // Небольшая задержка для эмуляции стриминга
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
         
         // Завершающее сообщение
+        const finalData = {
+          id: `chatcmpl-${Date.now()}`,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: model,
+          choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: 'stop'
+          }]
+        };
+        
+        res.write(`data: ${JSON.stringify(finalData)}\n\n`);
         res.write(`data: [DONE]\n\n`);
         res.end();
+        
       } else {
         // Обычный ответ
-        responseText = response.text || response.content || '';
-        
-        // Обновляем историю
-        if (conversationState) {
-          conversationState.history.push(
-            { role: 'user', content: userMessage.content },
-            { role: 'assistant', content: responseText }
-          );
-        }
-        
-        // Сохраняем состояние
-        saveConversationState(userId, characterId, chatId, conversationState.history);
-        
-        // Формируем ответ в формате OpenAI
         const openAIResponse = {
           id: `chatcmpl-${Date.now()}`,
           object: 'chat.completion',
           created: Math.floor(Date.now() / 1000),
-          model: `${characterId}:${chatId}`,
+          model: `${characterId}:${chatId || 'new'}`,
           choices: [{
             index: 0,
             message: {
@@ -258,19 +236,61 @@ export default async function handler(req, res) {
             finish_reason: 'stop'
           }],
           usage: {
-            prompt_tokens: userMessage.content.length,
-            completion_tokens: responseText.length,
-            total_tokens: userMessage.content.length + responseText.length
+            prompt_tokens: Math.ceil(userMessage.content.length / 4),
+            completion_tokens: Math.ceil(responseText.length / 4),
+            total_tokens: Math.ceil((userMessage.content.length + responseText.length) / 4)
           }
         };
         
         return res.status(200).json(openAIResponse);
       }
-    } catch (sendError) {
-      console.error('Send message error:', sendError);
+      
+    } catch (chatError) {
+      console.error('Chat error:', chatError);
+      
+      // Пытаемся создать новый чат при ошибке
+      if (!providedChatId) {
+        try {
+          chat = await characterAI.createOrContinueChat(characterId);
+          const response = await chat.sendAndAwaitResponse(userMessage.content, true);
+          
+          if (response && response.text) {
+            const responseText = response.text;
+            
+            // Сохраняем новый чат
+            saveConversationState(userId, characterId, chat.externalId, [
+              { role: 'user', content: userMessage.content },
+              { role: 'assistant', content: responseText }
+            ]);
+            
+            return res.status(200).json({
+              id: `chatcmpl-${Date.now()}`,
+              object: 'chat.completion',
+              created: Math.floor(Date.now() / 1000),
+              model: `${characterId}:${chat.externalId || 'new'}`,
+              choices: [{
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: responseText
+                },
+                finish_reason: 'stop'
+              }],
+              usage: {
+                prompt_tokens: Math.ceil(userMessage.content.length / 4),
+                completion_tokens: Math.ceil(responseText.length / 4),
+                total_tokens: Math.ceil((userMessage.content.length + responseText.length) / 4)
+              }
+            });
+          }
+        } catch (retryError) {
+          console.error('Retry error:', retryError);
+        }
+      }
+      
       return res.status(500).json({ 
         error: 'Failed to send message',
-        details: sendError.message 
+        details: chatError.message 
       });
     }
     
@@ -281,4 +301,4 @@ export default async function handler(req, res) {
       details: error.message 
     });
   }
-}
+};
