@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Character.AI Proxy Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            color: #444;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+        }
+        
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+        
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .button:active {
+            transform: translateY(0);
+        }
+        
+        .info-box {
+            background: #f5f5f5;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .info-box h3 {
+            color: #444;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .info-box p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .code {
+            background: #f0f0f0;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .chat-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        
+        .chat-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .chat-item:hover {
+            background: #e9e9e9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Character.AI Proxy</h1>
+        <p class="subtitle">OpenAI-совместимый прокси для Character.AI</p>
+        
+        <div class="success" id="successMessage"></div>
+        <div class="error" id="errorMessage"></div>
+        
+        <div class="info-box">
+            <h3>📋 Инструкция по настройке Risu AI</h3>
+            <p>
+                1. Откройте настройки API в Risu AI<br>
+                2. Выберите "Custom" или "OpenAI-compatible"<br>
+                3. URL: <span class="code" id="apiUrl">Loading...</span><br>
+                4. Модель: <span class="code">character-ai:{ID_персонажа}</span><br>
+                5. API ключ: Ваш Character.AI токен
+            </p>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">🔑 Получение токена</h2>
+            <div class="input-group">
+                <label>Character.AI Token:</label>
+                <input type="password" id="tokenInput" placeholder="Вставьте ваш токен здесь">
+                <small style="color: #666; display: block; margin-top: 5px;">
+                    F12 → Application → Local Storage → найдите токен в ключе @@auth0spajs@@
+                </small>
+            </div>
+            <button class="button" onclick="saveToken()">💾 Сохранить токен</button>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">💬 Сохраненные диалоги</h2>
+            <div id="chatList" class="chat-list">
+                <p style="color: #999; text-align: center;">Нет сохраненных диалогов</p>
+            </div>
+            <button class="button" onclick="clearChats()" style="margin-top: 10px; background: #dc3545;">
+                🗑️ Очистить все диалоги
+            </button>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">🧪 Тестирование API</h2>
+            <div class="input-group">
+                <label>Character ID:</label>
+                <input type="text" id="characterId" placeholder="Например: 8_1NyR8w1dOXmI1uWaieQcd147hecbdIK7CeEAIrdJw">
+            </div>
+            <div class="input-group">
+                <label>Тестовое сообщение:</label>
+                <textarea id="testMessage" placeholder="Введите тестовое сообщение">Привет! Как дела?</textarea>
+            </div>
+            <button class="button" onclick="testAPI()">🚀 Отправить тест</button>
+        </div>
+        
+        <div class="section">
+            <h2 class="section-title">📝 Пример конфигурации для Risu AI</h2>
+            <textarea id="configExample" readonly style="font-size: 12px; height: 120px;">
+{
+  "api_type": "custom",
+  "api_url": "Loading...",
+  "api_key": "YOUR_CHARACTER_AI_TOKEN",
+  "model": "character-ai:CHARACTER_ID",
+  "stream": false
+}
+            </textarea>
+        </div>
+    </div>
+    
+    <script>
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            const baseUrl = window.location.origin;
+            const apiUrl = `${baseUrl}/api/v1/chat/completions`;
+            
+            document.getElementById('apiUrl').textContent = apiUrl;
+            document.getElementById('configExample').value = JSON.stringify({
+                api_type: "custom",
+                api_url: apiUrl,
+                api_key: "YOUR_CHARACTER_AI_TOKEN",
+                model: "character-ai:CHARACTER_ID",
+                stream: false
+            }, null, 2);
+            
+            loadToken();
+            loadChats();
+        });
+        
+        // Сохранение токена
+        function saveToken() {
+            const token = document.getElementById('tokenInput').value;
+            if (token) {
+                localStorage.setItem('characterai_token', token);
+                showSuccess('Токен успешно сохранен!');
+            } else {
+                showError('Пожалуйста, введите токен');
+            }
+        }
+        
+        // Загрузка токена
+        function loadToken() {
+            const token = localStorage.getItem('characterai_token');
+            if (token) {
+                document.getElementById('tokenInput').value = token;
+            }
+        }
+        
+        // Загрузка чатов
+        function loadChats() {
+            const chats = JSON.parse(localStorage.getItem('characterai_chats') || '{}');
+            const chatList = document.getElementById('chatList');
+            
+            if (Object.keys(chats).length === 0) {
+                chatList.innerHTML = '<p style="color: #999; text-align: center;">Нет сохраненных диалогов</p>';
+            } else {
+                chatList.innerHTML = '';
+                Object.entries(chats).forEach(([id, chat]) => {
+                    const item = document.createElement('div');
+                    item.className = 'chat-item';
+                    item.innerHTML = `
+                        <strong>ID:</strong> ${id}<br>
+                        <small>Последнее сообщение: ${new Date(chat.lastMessage).toLocaleString()}</small>
+                    `;
+                    item.onclick = () => {
+                        document.getElementById('characterId').value = id;
+                    };
+                    chatList.appendChild(item);
+                });
+            }
+        }
+        
+        // Сохранение чата
+        function saveChat(characterId) {
+            const chats = JSON.parse(localStorage.getItem('characterai_chats') || '{}');
+            chats[characterId] = {
+                lastMessage: Date.now(),
+                characterId: characterId
+            };
+            localStorage.setItem('characterai_chats', JSON.stringify(chats));
+            loadChats();
+        }
+        
+        // Очистка чатов
+        function clearChats() {
+            if (confirm('Вы уверены, что хотите удалить все сохраненные диалоги?')) {
+                localStorage.removeItem('characterai_chats');
+                loadChats();
+                showSuccess('Все диалоги удалены');
+            }
+        }
+        
+        // Тестирование API
+        async function testAPI() {
+            const token = document.getElementById('tokenInput').value;
+            const characterId = document.getElementById('characterId').value;
+            const message = document.getElementById('testMessage').value;
+            
+            if (!token || !characterId || !message) {
+                showError('Заполните все поля');
+                return;
+            }
+            
+            const baseUrl = window.location.origin;
+            const apiUrl = `${baseUrl}/api/v1/chat/completions`;
+            
+            try {
+                showSuccess('Отправка запроса...');
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        model: `character-ai:${characterId}`,
+                        messages: [
+                            { role: 'user', content: message }
+                        ],
+                        stream: false
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const reply = data.choices[0].message.content;
+                    showSuccess(`Ответ получен: "${reply}"`);
+                    saveChat(characterId);
+                } else {
+                    showError(`Ошибка API: ${data.error?.message || 'Unknown error'}`);
+                }
+            } catch (error) {
+                showError(`Ошибка: ${error.message}`);
+            }
+        }
+        
+        // Утилиты для сообщений
+        function showSuccess(message) {
+            const elem = document.getElementById('successMessage');
+            elem.textContent = message;
+            elem.style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+            
+            setTimeout(() => {
+                elem.style.display = 'none';
+            }, 5000);
+        }
+        
+        function showError(message) {
+            const elem = document.getElementById('errorMessage');
+            elem.textContent = message;
+            elem.style.display = 'block';
+            document.getElementById('successMessage').style.display = 'none';
+            
+            setTimeout(() => {
+                elem.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
