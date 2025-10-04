@@ -8,7 +8,7 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
-    "cainode": "^1.2.9",
+    "node_characterai": "^1.2.8",
     "cors": "^2.8.5"
   },
   "engines": {
