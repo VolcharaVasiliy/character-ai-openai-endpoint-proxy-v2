@@ -1,12 +1,11 @@
 {
   "functions": {
-    "api/**/*.js": {
+    "api/*.js": {
       "maxDuration": 30
     }
   },
   "rewrites": [
     { "source": "/api/chat/completions", "destination": "/api/chat-completions" },
-    { "source": "/api/characters", "destination": "/api/characters" },
-    { "source": "/", "destination": "/index.html" }
+    { "source": "/", "destination": "/public/index.html" }
   ]
 }
