@@ -1,15 +1,13 @@
-const CharacterAI = require('node_characterai');
+const fetch = require('node-fetch');
 
-const headers = {
+const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Content-Type': 'application/json'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
 
 module.exports = async (req, res) => {
-  // Устанавливаем CORS заголовки
-  Object.entries(headers).forEach(([key, value]) => {
+  Object.entries(corsHeaders).forEach(([key, value]) => {
     res.setHeader(key, value);
   });
 
@@ -17,25 +15,57 @@ module.exports = async (req, res) => {
     return res.status(200).end();
   }
 
-  const { token } = req.query;
+  const { token, characterId } = req.query;
   
   if (!token) {
     return res.status(400).json({ error: 'Token required' });
   }
 
   try {
-    const client = new CharacterAI();
-    await client.authenticateWithToken(token);
+    const headers = {
+      'authorization': `Token ${token}`,
+      'accept': 'application/json',
+      'content-type': 'application/json',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    };
+
+    // Получаем историю чатов
+    const historyUrl = characterId 
+      ? `https://beta.character.ai/chat/character/histories/?character_external_id=${characterId}`
+      : 'https://beta.character.ai/chat/user/';
+      
+    const response = await fetch(historyUrl, { headers });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Response text:', text);
+      return res.status(response.status).json({ 
+        error: 'Failed to fetch data',
+        status: response.status,
+        message: text.substring(0, 100)
+      });
+    }
+
+    const contentType = response.headers.get('content-type');
     
-    // Получаем информацию о пользователе
-    const user = await client.fetchUser();
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      return res.status(200).json({
+        success: true,
+        data: data,
+        histories: data.histories || []
+      });
+    } else {
+      const text = await response.text();
+      return res.status(200).json({
+        success: true,
+        message: 'Token is valid but response is not JSON',
+        rawResponse: text.substring(0, 200)
+      });
+    }
     
-    return res.status(200).json({
-      success: true,
-      user: user || {},
-      message: 'Token is valid'
-    });
   } catch (error) {
+    console.error('Error:', error);
     return res.status(500).json({ 
       error: error.message,
       success: false 
