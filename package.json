@@ -1,10 +1,16 @@
 {
   "name": "character-ai-proxy",
   "version": "1.0.0",
-  "description": "Character AI OpenAI Proxy",
-  "main": "api/index.js",
+  "description": "Character.AI OpenAI-compatible proxy for Vercel",
   "scripts": {
-    "dev": "vercel dev"
+    "dev": "vercel dev",
+    "deploy": "vercel"
+  },
+  "dependencies": {
+    "node_characterai": "^1.2.8",
+    "puppeteer-core": "^21.0.0",
+    "chrome-aws-lambda": "^10.1.0",
+    "uuid": "^9.0.1"
   },
   "engines": {
     "node": ">=18.x"
