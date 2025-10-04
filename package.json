@@ -1,14 +1,14 @@
 {
   "name": "character-ai-proxy",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Character.AI OpenAI-compatible proxy for Vercel",
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel"
   },
   "dependencies": {
-    "uuid": "^9.0.1",
-    "node-fetch": "^2.7.0"
+    "cainode": "^1.1.7",
+    "uuid": "^9.0.1"
   },
   "engines": {
     "node": ">=18.x"
