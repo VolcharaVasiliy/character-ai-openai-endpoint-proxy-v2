@@ -7,11 +7,8 @@
     "deploy": "vercel"
   },
   "dependencies": {
-    "node_characterai": "^1.2.8",
-    "puppeteer-core": "^21.0.0",
-    "chrome-aws-lambda": "^10.1.0",
     "uuid": "^9.0.1",
-    "cors": "^2.8.5"
+    "node-fetch": "^2.7.0"
   },
   "engines": {
     "node": ">=18.x"
