@@ -1,15 +1,41 @@
 {
   "version": 2,
-  "builds": [
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
     {
-      "src": "pages/api/**/*.js",
-      "use": "@vercel/node"
+      "source": "/v1/chat/completions",
+      "destination": "/api"
+    },
+    {
+      "source": "/v1/models",
+      "destination": "/api/models"
+    },
+    {
+      "source": "/admin",
+      "destination": "/api/admin.html"
     }
   ],
-  "routes": [
+  "headers": [
     {
-      "src": "/v1/chat/completions",
-      "dest": "/api/v1/chat/completions"
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Authorization, Content-Type, X-Character-Id"
+        }
+      ]
     }
   ]
 }
