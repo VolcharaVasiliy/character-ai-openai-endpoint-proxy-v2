@@ -1,86 +1,158 @@
-const CharacterAI = require('node_characterai');
-const chromium = require('chrome-aws-lambda');
 const { v4: uuidv4 } = require('uuid');
 
-// Кэш для хранения клиентов
-const clientCache = new Map();
-const chatCache = new Map();
+// Кэш для хранения сессий
+const sessionCache = new Map();
 
-// Установка CORS заголовков
-const setCorsHeaders = (res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Content-Type', 'application/json');
+// CORS заголовки
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Content-Type': 'application/json'
 };
 
-// Получение или создание клиента
-async function getOrCreateClient(token) {
-  const cacheKey = `client_${token}`;
-  
-  if (clientCache.has(cacheKey)) {
-    return clientCache.get(cacheKey);
+// Character.AI API класс
+class CharacterAIClient {
+  constructor(token) {
+    this.token = token;
+    this.baseURL = 'https://beta.character.ai';
+    this.headers = {
+      'Authorization': `Token ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    };
   }
   
-  const client = new CharacterAI();
+  async createOrContinueChat(characterId, historyId = null) {
+    try {
+      // Если есть история, продолжаем чат
+      if (historyId) {
+        return { characterId, historyId };
+      }
+      
+      // Создаем новый чат
+      const response = await fetch(`${this.baseURL}/chat/history/create/`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          character_external_id: characterId
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to create chat: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      return {
+        characterId,
+        historyId: data.external_id
+      };
+    } catch (error) {
+      console.error('Chat creation error:', error);
+      throw error;
+    }
+  }
   
-  // Настройка puppeteer для Vercel
-  client.puppeteerPath = await chromium.executablePath;
-  client.puppeteerLaunchArgs = chromium.args;
-  
-  try {
-    await client.authenticateWithToken(token);
-    clientCache.set(cacheKey, client);
-    
-    // Очистка кэша через 30 минут
-    setTimeout(() => {
-      clientCache.delete(cacheKey);
-    }, 30 * 60 * 1000);
-    
-    return client;
-  } catch (error) {
-    console.error('Authentication error:', error);
-    throw new Error('Failed to authenticate with Character.AI');
+  async sendMessage(characterId, historyId, message) {
+    try {
+      const response = await fetch(`${this.baseURL}/chat/streaming/`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          history_external_id: historyId,
+          character_external_id: characterId,
+          text: message,
+          tgt: characterId,
+          ranking_method: 'random',
+          staging: false,
+          model_server_address: null,
+          override_prefix: null,
+          override_rank: null,
+          rank_candidates: null,
+          filter_candidates: null,
+          enable_tti: true,
+          initial_timeout: null,
+          insert_beginning: null,
+          translate_candidates: null,
+          stream_every_n_steps: 16,
+          chunks_to_pad: 8,
+          is_proactive: false
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to send message: ${response.statusText}`);
+      }
+      
+      // Читаем streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          try {
+            const data = JSON.parse(line);
+            if (data.replies && data.replies.length > 0) {
+              fullResponse = data.replies[0].text;
+            }
+          } catch (e) {
+            // Игнорируем не-JSON строки
+          }
+        }
+      }
+      
+      return fullResponse || 'Не удалось получить ответ';
+    } catch (error) {
+      console.error('Send message error:', error);
+      throw error;
+    }
   }
 }
 
-// Получение или создание чата
-async function getOrCreateChat(client, characterId, token) {
-  const cacheKey = `chat_${token}_${characterId}`;
+// Получение или создание клиента
+function getOrCreateClient(token) {
+  const cacheKey = `client_${token}`;
   
-  if (chatCache.has(cacheKey)) {
-    return chatCache.get(cacheKey);
+  if (sessionCache.has(cacheKey)) {
+    return sessionCache.get(cacheKey);
   }
   
-  try {
-    const chat = await client.createOrContinueChat(characterId);
-    chatCache.set(cacheKey, chat);
-    
-    // Очистка кэша через 15 минут
-    setTimeout(() => {
-      chatCache.delete(cacheKey);
-    }, 15 * 60 * 1000);
-    
-    return chat;
-  } catch (error) {
-    console.error('Chat creation error:', error);
-    throw new Error('Failed to create or continue chat');
-  }
+  const client = new CharacterAIClient(token);
+  sessionCache.set(cacheKey, client);
+  
+  // Очистка кэша через 30 минут
+  setTimeout(() => {
+    sessionCache.delete(cacheKey);
+  }, 30 * 60 * 1000);
+  
+  return client;
 }
 
 // Парсинг модели для получения ID персонажа
 function parseModelId(model) {
-  // Формат: "character-ai:{character_id}"
   if (model.startsWith('character-ai:')) {
     return model.substring('character-ai:'.length);
   }
-  // Если передан просто ID
   return model;
 }
 
 // Основной обработчик
 module.exports = async (req, res) => {
-  setCorsHeaders(res);
+  // Установка CORS заголовков
+  Object.entries(corsHeaders).forEach(([key, value]) => {
+    res.setHeader(key, value);
+  });
   
   // Обработка preflight запроса
   if (req.method === 'OPTIONS') {
@@ -94,6 +166,7 @@ module.exports = async (req, res) => {
   }
   
   try {
+    // Проверка авторизации
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.status(401).json({ 
@@ -138,42 +211,60 @@ module.exports = async (req, res) => {
       return;
     }
     
-    // Создание клиента и чата
-    const client = await getOrCreateClient(token);
-    const chat = await getOrCreateChat(client, characterId, token);
+    // Создание клиента
+    const client = getOrCreateClient(token);
+    
+    // Получение или создание истории чата
+    const sessionKey = `session_${token}_${characterId}`;
+    let session = sessionCache.get(sessionKey);
+    
+    if (!session) {
+      session = await client.createOrContinueChat(characterId);
+      sessionCache.set(sessionKey, session);
+    }
     
     // Отправка сообщения и получение ответа
-    const response = await chat.sendAndAwaitResponse(userMessage.content, true);
+    const response = await client.sendMessage(
+      characterId,
+      session.historyId,
+      userMessage.content
+    );
     
     // Формирование ответа в формате OpenAI
     const completionId = `chatcmpl-${uuidv4()}`;
     const created = Math.floor(Date.now() / 1000);
     
     if (stream) {
-      // Streaming response
+      // Streaming response (Server-Sent Events)
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
       
-      // Отправка начального чанка
-      const streamChunk = {
-        id: completionId,
-        object: 'chat.completion.chunk',
-        created: created,
-        model: body.model,
-        choices: [{
-          index: 0,
-          delta: {
-            role: 'assistant',
-            content: response
-          },
-          finish_reason: null
-        }]
-      };
+      // Разбиваем ответ на части для имитации streaming
+      const words = response.split(' ');
+      const chunkSize = 5; // Слов в чанке
       
-      res.write(`data: ${JSON.stringify(streamChunk)}\n\n`);
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const chunk = words.slice(i, i + chunkSize).join(' ') + ' ';
+        const streamData = {
+          id: completionId,
+          object: 'chat.completion.chunk',
+          created: created,
+          model: body.model,
+          choices: [{
+            index: 0,
+            delta: {
+              content: chunk
+            },
+            finish_reason: null
+          }]
+        };
+        
+        res.write(`data: ${JSON.stringify(streamData)}\n\n`);
+      }
       
-      // Отправка финального чанка
+      // Финальный чанк
       const finalChunk = {
         id: completionId,
         object: 'chat.completion.chunk',
@@ -205,9 +296,9 @@ module.exports = async (req, res) => {
           finish_reason: 'stop'
         }],
         usage: {
-          prompt_tokens: userMessage.content.length,
-          completion_tokens: response.length,
-          total_tokens: userMessage.content.length + response.length
+          prompt_tokens: Math.floor(userMessage.content.length / 4),
+          completion_tokens: Math.floor(response.length / 4),
+          total_tokens: Math.floor((userMessage.content.length + response.length) / 4)
         }
       };
       
@@ -218,7 +309,8 @@ module.exports = async (req, res) => {
     res.status(500).json({ 
       error: {
         message: error.message || 'Internal server error',
-        type: 'internal_error'
+        type: 'internal_error',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       }
     });
   }
