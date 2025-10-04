@@ -2,8 +2,8 @@ const fetch = require('node-fetch');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type'
 };
 
 module.exports = async (req, res) => {
@@ -20,39 +20,45 @@ module.exports = async (req, res) => {
   if (!token) {
     return res.status(400).json({ 
       error: 'Token required',
-      usage: 'Add ?token=YOUR_TOKEN to the URL'
+      usage: '?token=YOUR_TOKEN'
     });
   }
 
   try {
-    // Тестируем токен
     const response = await fetch('https://beta.character.ai/chat/user/', {
       headers: {
-        'Authorization': `Token ${token}`,
-        'Accept': 'application/json'
+        'authorization': `Token ${token}`,
+        'accept': 'application/json'
       }
     });
 
-    if (!response.ok) {
+    const text = await response.text();
+    
+    if (response.ok) {
+      try {
+        const data = JSON.parse(text);
+        return res.status(200).json({
+          success: true,
+          message: 'Token is valid',
+          user: data.user || {},
+          authenticated: true
+        });
+      } catch (e) {
+        return res.status(200).json({
+          success: true,
+          message: 'Token seems valid',
+          authenticated: true,
+          raw: text.substring(0, 100)
+        });
+      }
+    } else {
       return res.status(401).json({ 
         success: false,
         error: 'Invalid token',
-        status: response.status
+        status: response.status,
+        message: text.substring(0, 100)
       });
     }
-
-    const data = await response.json();
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Token is valid',
-      user: data.user || {},
-      info: {
-        endpoint: `${req.headers.host}/api/chat/completions`,
-        tokenFormat: 'accessToken:characterId:chatId',
-        example: `${token}:CHAR_ID_HERE`
-      }
-    });
   } catch (error) {
     return res.status(500).json({ 
       success: false,
