@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Character.AI OpenAI Proxy</title>
+    <title>Character.AI OpenAI Proxy - Тестер</title>
     <style>
         * {
             margin: 0;
@@ -12,18 +12,21 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             padding: 20px;
         }
         
         .container {
-            max-width: 900px;
-            margin: 0 auto;
             background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            max-width: 900px;
+            width: 100%;
             overflow: hidden;
         }
         
@@ -35,27 +38,49 @@
         }
         
         .header h1 {
-            font-size: 2em;
+            font-size: 28px;
             margin-bottom: 10px;
         }
         
         .header p {
             opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .tabs {
+            display: flex;
+            background: #f5f5f7;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 15px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            background: white;
+            color: #667eea;
+            font-weight: 600;
+            border-bottom: 2px solid #667eea;
         }
         
         .content {
             padding: 30px;
         }
         
-        .section {
-            margin-bottom: 30px;
+        .tab-content {
+            display: none;
         }
         
-        .section h2 {
-            color: #333;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #f0f0f0;
+        .tab-content.active {
+            display: block;
         }
         
         .form-group {
@@ -65,17 +90,18 @@
         label {
             display: block;
             margin-bottom: 8px;
-            color: #555;
+            color: #333;
             font-weight: 500;
+            font-size: 14px;
         }
         
         input, textarea {
             width: 100%;
             padding: 12px;
-            border: 2px solid #e0e0e0;
+            border: 1px solid #e0e0e0;
             border-radius: 8px;
             font-size: 14px;
-            transition: border-color 0.3s;
+            transition: border 0.3s;
         }
         
         input:focus, textarea:focus {
@@ -87,10 +113,11 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 12px 24px;
+            padding: 12px 30px;
             border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
-            font-size: 16px;
             transition: transform 0.2s;
         }
         
@@ -98,104 +125,124 @@
             transform: translateY(-2px);
         }
         
-        .result {
-            background: #f8f9fa;
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .info-box {
+            background: #f5f5f7;
+            padding: 15px;
             border-radius: 8px;
-            padding: 20px;
-            margin-top: 20px;
-            display: none;
+            margin-bottom: 20px;
         }
         
-        .result.show {
-            display: block;
+        .info-box h3 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 16px;
         }
         
-        .result pre {
-            background: white;
+        .info-box p, .info-box li {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .info-box ul {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+        
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
             padding: 15px;
-            border-radius: 6px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
             overflow-x: auto;
-            border: 1px solid #e0e0e0;
+            margin-top: 10px;
         }
         
-        .instruction-box {
-            background: #f0f7ff;
-            border-left: 4px solid #667eea;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 4px;
+        .response-box {
+            background: #f5f5f7;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
         }
         
-        .instruction-box h3 {
-            color: #667eea;
+        .response-box h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .message {
+            padding: 10px 15px;
+            border-radius: 8px;
             margin-bottom: 10px;
         }
         
-        .code {
-            background: #f4f4f4;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
+        .message.user {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-left: 20%;
+            text-align: right;
         }
         
-        .url-display {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 15px;
-            word-break: break-all;
-            font-family: monospace;
-            font-size: 14px;
+        .message.assistant {
+            background: white;
+            border: 1px solid #e0e0e0;
+            margin-right: 20%;
         }
         
         .status {
-            padding: 8px 16px;
-            border-radius: 20px;
-            display: inline-block;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-top: 15px;
             font-size: 14px;
-            margin-top: 10px;
         }
         
         .status.success {
             background: #d4edda;
             color: #155724;
+            border: 1px solid #c3e6cb;
         }
         
         .status.error {
             background: #f8d7da;
             color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
         }
 
-        .tabs {
+        .endpoint-url {
+            background: #fff;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #667eea;
+            margin-top: 10px;
+            word-break: break-all;
+            font-family: monospace;
+            color: #667eea;
+        }
+
+        /* Сохранение истории */
+        .history-controls {
             display: flex;
             gap: 10px;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #f0f0f0;
+            margin-top: 15px;
         }
 
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border: none;
-            background: none;
-            color: #666;
-            font-size: 16px;
-            transition: color 0.3s;
-        }
-
-        .tab.active {
-            color: #667eea;
-            border-bottom: 3px solid #667eea;
-            margin-bottom: -2px;
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
+        .history-controls button {
+            flex: 1;
         }
     </style>
 </head>
@@ -203,319 +250,363 @@
     <div class="container">
         <div class="header">
             <h1>🤖 Character.AI OpenAI Proxy</h1>
-            <p>Конвертер API для использования в Risu AI и других клиентах</p>
+            <p>Используйте Character.AI через OpenAI-совместимый API в Risu AI</p>
         </div>
-        
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('instructions')">📖 Инструкция</button>
+            <button class="tab" onclick="switchTab('token')">🔑 Получить токен</button>
+            <button class="tab" onclick="switchTab('test')">🧪 Тестер API</button>
+        </div>
+
         <div class="content">
-            <div class="tabs">
-                <button class="tab active" onclick="switchTab('setup')">Настройка</button>
-                <button class="tab" onclick="switchTab('test')">Тестирование</button>
-                <button class="tab" onclick="switchTab('chats')">Мои чаты</button>
-            </div>
-
-            <!-- Вкладка настройки -->
-            <div id="setup-tab" class="tab-content active">
-                <div class="section">
-                    <h2>📋 Инструкция по настройке</h2>
-                    
-                    <div class="instruction-box">
-                        <h3>Шаг 1: Получение Access Token</h3>
-                        <ol>
-                            <li>Откройте <a href="https://character.ai" target="_blank">Character.AI</a></li>
-                            <li>Войдите в свой аккаунт</li>
-                            <li>Откройте DevTools (F12)</li>
-                            <li>Перейдите во вкладку <span class="code">Application</span> → <span class="code">Local Storage</span></li>
-                            <li>Найдите ключ <span class="code">char_token</span> и скопируйте его значение</li>
-                        </ol>
-                    </div>
-
-                    <div class="instruction-box">
-                        <h3>Шаг 2: Получение Character ID</h3>
-                        <ol>
-                            <li>Откройте страницу персонажа на Character.AI</li>
-                            <li>В URL найдите ID после <span class="code">/chat/</span></li>
-                            <li>Например: <span class="code">https://character.ai/chat/XXXXX</span> → ID: <span class="code">XXXXX</span></li>
-                        </ol>
-                    </div>
-
-                    <div class="instruction-box">
-                        <h3>Шаг 3: Настройка в Risu AI</h3>
-                        <ol>
-                            <li><strong>URL:</strong> <span class="code" id="apiUrl"></span></li>
-                            <li><strong>Token:</strong> <span class="code">accessToken:characterId:chatId</span> (chatId опционально)</li>
-                            <li><strong>Model:</strong> <span class="code">character-ai</span> (или любое название)</li>
-                        </ol>
-                    </div>
+            <!-- Инструкция -->
+            <div id="instructions" class="tab-content active">
+                <div class="info-box">
+                    <h3>🚀 Быстрый старт для Risu AI</h3>
+                    <ol>
+                        <li>Получите токен Character.AI во вкладке "Получить токен"</li>
+                        <li>Откройте Risu AI и перейдите в настройки</li>
+                        <li>Выберите "Custom" в качестве API провайдера</li>
+                        <li>Введите следующие данные:</li>
+                    </ol>
+                    <div class="endpoint-url" id="apiUrl">Загрузка...</div>
                 </div>
 
-                <div class="section">
-                    <h2>🔗 Генератор конфигурации</h2>
-                    
-                    <div class="form-group">
-                        <label>Access Token:</label>
-                        <input type="text" id="accessToken" placeholder="Вставьте char_token из Character.AI">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Character ID:</label>
-                        <input type="text" id="characterId" placeholder="ID персонажа из URL">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Chat ID (опционально):</label>
-                        <input type="text" id="chatId" placeholder="Оставьте пустым для нового чата">
-                    </div>
-                    
-                    <button onclick="generateConfig()">Сгенерировать конфигурацию</button>
-                    
-                    <div id="configResult" class="result">
-                        <h3>Ваша конфигурация для Risu AI:</h3>
-                        <div class="url-display">
-                            <strong>API URL:</strong> <span id="generatedUrl"></span>
-                        </div>
-                        <div class="url-display">
-                            <strong>Token:</strong> <span id="generatedToken"></span>
-                        </div>
-                        <button onclick="copyToClipboard('generatedUrl')">Копировать URL</button>
-                        <button onclick="copyToClipboard('generatedToken')">Копировать Token</button>
-                    </div>
+                <div class="info-box">
+                    <h3>⚙️ Настройки в Risu AI</h3>
+                    <ul>
+                        <li><strong>API URL:</strong> <span class="code-inline">https://ваш-домен.vercel.app/v1/chat/completions</span></li>
+                        <li><strong>API Key:</strong> Ваш токен Character.AI</li>
+                        <li><strong>Model:</strong> ID персонажа (например: <span class="code-inline">YntB_1e8Prw3QOMpj0lOXQ</span>)</li>
+                        <li><strong>Streaming:</strong> Поддерживается ✅</li>
+                    </ul>
+                </div>
+
+                <div class="info-box">
+                    <h3>📝 Формат модели</h3>
+                    <p>Используйте один из форматов:</p>
+                    <ul>
+                        <li><strong>Новый чат:</strong> <span class="code-inline">CHARACTER_ID</span></li>
+                        <li><strong>Продолжить чат:</strong> <span class="code-inline">CHARACTER_ID:CHAT_ID</span></li>
+                    </ul>
+                    <p style="margin-top: 10px;">Система автоматически синхронизирует диалоги между Character.AI и Risu AI!</p>
+                </div>
+
+                <div class="info-box">
+                    <h3>🔍 Как получить Character ID</h3>
+                    <ol>
+                        <li>Откройте чат с персонажем на character.ai</li>
+                        <li>Посмотрите на URL страницы</li>
+                        <li>Найдите ID после <span class="code-inline">char=</span></li>
+                    </ol>
+                    <p style="margin-top: 10px;"><strong>Пример URL:</strong></p>
+                    <div class="code-block">https://character.ai/chat?char=YntB_1e8Prw3QOMpj0lOXQ</div>
                 </div>
             </div>
 
-            <!-- Вкладка тестирования -->
-            <div id="test-tab" class="tab-content">
-                <div class="section">
-                    <h2>🧪 Тестирование API</h2>
-                    
+            <!-- Получение токена -->
+            <div id="token" class="tab-content">
+                <div class="info-box">
+                    <h3>🔐 Способ 1: Получить из браузера (рекомендуется)</h3>
+                    <ol>
+                        <li>Войдите в свой аккаунт на <a href="https://character.ai" target="_blank">character.ai</a></li>
+                        <li>Откройте DevTools (F12)</li>
+                        <li>Перейдите во вкладку "Application" → "Local Storage"</li>
+                        <li>Найдите ключ <span class="code-inline">@@auth0spajs@@::dyD3gE281MqgISG7FuIXYhL2WEknqZzv::https://auth0.character.ai/::openid profile email offline_access</span></li>
+                        <li>Откройте body и скопируйте значение <span class="code-inline">access_token</span></li>
+                    </ol>
+                </div>
+
+                <div class="info-box">
+                    <h3>✉️ Способ 2: Получить по email</h3>
                     <div class="form-group">
-                        <label>Полный Token (accessToken:characterId:chatId):</label>
-                        <input type="text" id="testToken" placeholder="Введите полный токен">
+                        <label for="email">Email адрес</label>
+                        <input type="email" id="email" placeholder="your@email.com">
                     </div>
-                    
-                    <div class="form-group">
-                        <label>Тестовое сообщение:</label>
-                        <textarea id="testMessage" rows="3" placeholder="Введите сообщение для отправки">Привет! Как дела?</textarea>
-                    </div>
-                    
-                    <button onclick="testAPI()">Отправить тест</button>
-                    
-                    <div id="testResult" class="result">
-                        <h3>Результат:</h3>
-                        <pre id="testOutput"></pre>
-                    </div>
+                    <button onclick="generateToken()">Отправить ссылку верификации</button>
+                    <div id="tokenStatus"></div>
+                </div>
+
+                <div class="info-box" style="background: #fff3cd; border: 1px solid #ffc107;">
+                    <h3>⚠️ Важно</h3>
+                    <ul>
+                        <li>Токен действителен в течение 1 года</li>
+                        <li>Не делитесь токеном с третьими лицами</li>
+                        <li>При использовании email-метода, проверьте папку спам</li>
+                    </ul>
                 </div>
             </div>
 
-            <!-- Вкладка чатов -->
-            <div id="chats-tab" class="tab-content">
-                <div class="section">
-                    <h2>💬 Управление чатами</h2>
-                    
-                    <div class="form-group">
-                        <label>Access Token:</label>
-                        <input type="text" id="chatsToken" placeholder="Введите char_token">
-                    </div>
-                    
-                    <button onclick="loadChats()">Загрузить чаты</button>
-                    
-                    <div id="chatsResult" class="result">
-                        <h3>Ваши чаты:</h3>
-                        <div id="chatsList"></div>
-                    </div>
+            <!-- Тестер -->
+            <div id="test" class="tab-content">
+                <div class="form-group">
+                    <label for="testToken">API Token (Character.AI)</label>
+                    <input type="password" id="testToken" placeholder="Ваш токен Character.AI">
                 </div>
+
+                <div class="form-group">
+                    <label for="testCharacterId">Character ID</label>
+                    <input type="text" id="testCharacterId" placeholder="Например: YntB_1e8Prw3QOMpj0lOXQ">
+                </div>
+
+                <div class="form-group">
+                    <label for="testChatId">Chat ID (необязательно, для продолжения диалога)</label>
+                    <input type="text" id="testChatId" placeholder="Оставьте пустым для нового чата">
+                </div>
+
+                <div class="form-group">
+                    <label for="testMessage">Сообщение</label>
+                    <textarea id="testMessage" rows="3" placeholder="Привет! Как дела?"></textarea>
+                </div>
+
+                <button onclick="testAPI()">🚀 Отправить тест</button>
                 
-                <div class="section">
-                    <h2>💾 Локальное хранилище</h2>
-                    <button onclick="exportData()">Экспортировать данные</button>
-                    <button onclick="importData()">Импортировать данные</button>
-                    <button onclick="clearData()">Очистить хранилище</button>
+                <div class="history-controls">
+                    <button onclick="clearHistory()">🗑️ Очистить историю</button>
+                    <button onclick="saveHistory()">💾 Сохранить историю</button>
+                    <button onclick="loadHistory()">📂 Загрузить историю</button>
                 </div>
+
+                <div id="testResponse" class="response-box" style="display: none;">
+                    <h3>💬 Диалог</h3>
+                    <div id="messages"></div>
+                </div>
+
+                <div id="testStatus"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // Установка URL при загрузке
-        document.addEventListener('DOMContentLoaded', () => {
-            const apiUrl = window.location.origin + '/api/chat/completions';
+        // Установка URL endpoint
+        window.addEventListener('DOMContentLoaded', () => {
+            const apiUrl = window.location.origin + '/v1/chat/completions';
             document.getElementById('apiUrl').textContent = apiUrl;
-            document.getElementById('generatedUrl').textContent = apiUrl;
-            
-            // Загрузка сохраненных данных
-            loadSavedData();
         });
 
+        // Переключение вкладок
         function switchTab(tabName) {
-            // Скрыть все вкладки
-            document.querySelectorAll('.tab-content').forEach(tab => {
-                tab.classList.remove('active');
-            });
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
             
-            // Показать выбранную вкладку
-            document.getElementById(tabName + '-tab').classList.add('active');
             event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
         }
 
-        function generateConfig() {
-            const accessToken = document.getElementById('accessToken').value.trim();
-            const characterId = document.getElementById('characterId').value.trim();
-            const chatId = document.getElementById('chatId').value.trim();
+        // Генерация токена
+        async function generateToken() {
+            const email = document.getElementById('email').value;
+            const statusDiv = document.getElementById('tokenStatus');
             
-            if (!accessToken || !characterId) {
-                alert('Пожалуйста, заполните Access Token и Character ID');
+            if (!email) {
+                statusDiv.innerHTML = '<div class="status error">Введите email адрес</div>';
                 return;
             }
             
-            const token = chatId 
-                ? `${accessToken}:${characterId}:${chatId}`
-                : `${accessToken}:${characterId}`;
+            statusDiv.innerHTML = '<div class="status info">Отправка запроса...</div>';
             
-            document.getElementById('generatedToken').textContent = token;
-            document.getElementById('configResult').classList.add('show');
-            
-            // Сохранение в localStorage
-            saveData({ accessToken, characterId, chatId });
-        }
-
-        // Обновите функцию testAPI
-async function testAPI() {
-    const token = document.getElementById('testToken').value.trim();
-    const message = document.getElementById('testMessage').value.trim();
-    
-    if (!token || !message) {
-        alert('Пожалуйста, заполните все поля');
-        return;
-    }
-    
-    const testResult = document.getElementById('testResult');
-    const testOutput = document.getElementById('testOutput');
-    
-    testResult.classList.add('show');
-    testOutput.textContent = 'Отправка запроса...';
-    
-    try {
-        // Сначала проверяем токен
-        const [accessToken] = token.split(':');
-        const testResponse = await fetch(`/api/test?token=${accessToken}`);
-        const testData = await testResponse.json();
-        
-        if (!testData.success) {
-            testOutput.textContent = `Ошибка токена: ${JSON.stringify(testData, null, 2)}`;
-            return;
-        }
-        
-        // Отправляем сообщение
-        const response = await fetch('/api/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                model: 'character-ai',
-                messages: [
-                    { role: 'user', content: message }
-                ],
-                stream: false
-            })
-        });
-        
-        const data = await response.json();
-        testOutput.textContent = JSON.stringify(data, null, 2);
-        
-        // Сохранение chat ID если есть
-        const chatId = response.headers.get('X-Chat-Id');
-        if (chatId) {
-            saveLastChatId(chatId);
-            console.log('Chat ID:', chatId);
-        }
-        
-    } catch (error) {
-        testOutput.textContent = `Ошибка: ${error.message}`;
-    }
-}
-
-        function copyToClipboard(elementId) {
-            const text = document.getElementById(elementId).textContent;
-            navigator.clipboard.writeText(text);
-            alert('Скопировано в буфер обмена!');
-        }
-
-        function copyText(text) {
-            navigator.clipboard.writeText(text);
-            alert('Скопировано в буфер обмена!');
-        }
-
-        // Функции для работы с localStorage
-        function saveData(data) {
-            localStorage.setItem('cai_proxy_config', JSON.stringify(data));
-        }
-
-        function loadSavedData() {
-            const saved = localStorage.getItem('cai_proxy_config');
-            if (saved) {
-                const data = JSON.parse(saved);
-                document.getElementById('accessToken').value = data.accessToken || '';
-                document.getElementById('characterId').value = data.characterId || '';
-                document.getElementById('chatId').value = data.chatId || '';
+            try {
+                const response = await fetch('/api/auth/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, timeout: 120 })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ Проверьте вашу почту!<br>
+                            Перейдите по ссылке в письме для получения токена.
+                            ${data.token ? `<br><strong>Токен:</strong> ${data.token}` : ''}
+                        </div>
+                    `;
+                    
+                    if (data.token) {
+                        // Сохраняем токен локально
+                        localStorage.setItem('cai_token', data.token);
+                    }
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ ${data.error || 'Ошибка генерации токена'}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Ошибка: ${error.message}</div>`;
             }
         }
 
-        function saveLastChatId(chatId) {
-            const saved = localStorage.getItem('cai_proxy_config');
-            if (saved) {
-                const data = JSON.parse(saved);
-                data.lastChatId = chatId;
-                localStorage.setItem('cai_proxy_config', JSON.stringify(data));
+        // Тестирование API
+        async function testAPI() {
+            const token = document.getElementById('testToken').value;
+            const characterId = document.getElementById('testCharacterId').value;
+            const chatId = document.getElementById('testChatId').value;
+            const message = document.getElementById('testMessage').value;
+            const statusDiv = document.getElementById('testStatus');
+            const responseDiv = document.getElementById('testResponse');
+            const messagesDiv = document.getElementById('messages');
+            
+            if (!token || !characterId || !message) {
+                statusDiv.innerHTML = '<div class="status error">Заполните все обязательные поля</div>';
+                return;
             }
+            
+            // Показываем диалог
+            responseDiv.style.display = 'block';
+            
+            // Добавляем сообщение пользователя
+            messagesDiv.innerHTML += `<div class="message user">${message}</div>`;
+            
+            statusDiv.innerHTML = '<div class="status info">⏳ Отправка сообщения...</div>';
+            
+            try {
+                const model = chatId ? `${characterId}:${chatId}` : characterId;
+                const apiUrl = window.location.origin + '/v1/chat/completions';
+                
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            { role: 'user', content: message }
+                        ],
+                        stream: false
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const assistantMessage = data.choices[0].message.content;
+                    messagesDiv.innerHTML += `<div class="message assistant">${assistantMessage}</div>`;
+                    
+                    // Сохраняем chat_id для следующих сообщений
+                    const modelInfo = data.model.split(':');
+                    if (modelInfo[1] && !document.getElementById('testChatId').value) {
+                        document.getElementById('testChatId').value = modelInfo[1];
+                    }
+                    
+                    statusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ Успешно!<br>
+                            Model: ${data.model}<br>
+                            Tokens: ${data.usage.total_tokens}
+                        </div>
+                    `;
+                    
+                    // Сохраняем в localStorage
+                    saveToLocalStorage(characterId, chatId || modelInfo[1], message, assistantMessage);
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ Ошибка: ${data.error}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Ошибка: ${error.message}</div>`;
+            }
+            
+            // Очищаем поле ввода
+            document.getElementById('testMessage').value = '';
         }
 
-        function exportData() {
-            const data = localStorage.getItem('cai_proxy_config');
-            if (data) {
-                const blob = new Blob([data], { type: 'application/json' });
+        // Сохранение в localStorage
+        function saveToLocalStorage(characterId, chatId, userMessage, assistantMessage) {
+            const key = `cai_history_${characterId}`;
+            let history = JSON.parse(localStorage.getItem(key) || '[]');
+            
+            history.push({
+                chatId,
+                timestamp: Date.now(),
+                user: userMessage,
+                assistant: assistantMessage
+            });
+            
+            // Ограничиваем историю 100 сообщениями
+            if (history.length > 100) {
+                history = history.slice(-100);
+            }
+            
+            localStorage.setItem(key, JSON.stringify(history));
+        }
+
+        // Очистка истории
+        function clearHistory() {
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('testChatId').value = '';
+            document.getElementById('testResponse').style.display = 'none';
+            document.getElementById('testStatus').innerHTML = '<div class="status info">История очищена</div>';
+        }
+
+        // Сохранение истории
+        function saveHistory() {
+            const characterId = document.getElementById('testCharacterId').value;
+            if (!characterId) {
+                alert('Введите Character ID');
+                return;
+            }
+            
+            const key = `cai_history_${characterId}`;
+            const history = localStorage.getItem(key);
+            
+            if (history) {
+                const blob = new Blob([history], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'cai_proxy_config.json';
+                a.download = `character_${characterId}_history.json`;
                 a.click();
+                URL.revokeObjectURL(url);
             } else {
-                alert('Нет данных для экспорта');
+                alert('Нет истории для сохранения');
             }
         }
 
-        function importData() {
+        // Загрузка истории
+        function loadHistory() {
             const input = document.createElement('input');
             input.type = 'file';
-            input.accept = '.json';
-            input.onchange = (e) => {
+            input.accept = 'application/json';
+            input.onchange = async (e) => {
                 const file = e.target.files[0];
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    try {
-                        const data = JSON.parse(event.target.result);
-                        localStorage.setItem('cai_proxy_config', JSON.stringify(data));
-                        loadSavedData();
-                        alert('Данные успешно импортированы');
-                    } catch (error) {
-                        alert('Ошибка при импорте данных');
+                if (file) {
+                    const text = await file.text();
+                    const history = JSON.parse(text);
+                    const messagesDiv = document.getElementById('messages');
+                    
+                    messagesDiv.innerHTML = '';
+                    history.forEach(item => {
+                        messagesDiv.innerHTML += `
+                            <div class="message user">${item.user}</div>
+                            <div class="message assistant">${item.assistant}</div>
+                        `;
+                    });
+                    
+                    document.getElementById('testResponse').style.display = 'block';
+                    
+                    if (history.length > 0) {
+                        const lastItem = history[history.length - 1];
+                        document.getElementById('testChatId').value = lastItem.chatId || '';
                     }
-                };
-                reader.readAsText(file);
+                }
             };
             input.click();
         }
-
-        function clearData() {
-            if (confirm('Вы уверены, что хотите очистить все сохраненные данные?')) {
-                localStorage.removeItem('cai_proxy_config');
-                alert('Данные очищены');
-                location.reload();
+        
+        // Загрузка сохраненного токена
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedToken = localStorage.getItem('cai_token');
+            if (savedToken) {
+                document.getElementById('testToken').value = savedToken;
             }
-        }
+        });
     </script>
 </body>
 </html>
