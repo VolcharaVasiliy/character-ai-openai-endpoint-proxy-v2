@@ -1,4 +1,3 @@
-const { CAINode } = require('cainode');
 const { v4: uuidv4 } = require('uuid');
 
 // Глобальный кэш для клиентов и чатов
@@ -13,30 +12,36 @@ const corsHeaders = {
   'Access-Control-Allow-Credentials': 'true'
 };
 
-// Получение или создание клиента CAINode
+// Динамический импорт CAINode
+let CAINode;
+async function loadCAINode() {
+  if (!CAINode) {
+    const module = await import('cainode');
+    CAINode = module.CAINode || module.default;
+  }
+  return CAINode;
+}
+
+// Получение или создание клиента
 async function getOrCreateClient(token) {
   const cacheKey = `client_${token}`;
   
-  // Проверяем кэш
   if (clientCache.has(cacheKey)) {
     const client = clientCache.get(cacheKey);
-    // Проверяем, что клиент еще подключен
     if (client && client.is_authenticated) {
       return client;
     }
   }
   
-  // Создаем новый клиент
-  const client = new CAINode();
+  // Загружаем CAINode динамически
+  const CAINodeClass = await loadCAINode();
+  const client = new CAINodeClass();
   
   try {
-    // Логинимся с токеном
     await client.login(token);
     
-    // Сохраняем в кэш
     clientCache.set(cacheKey, client);
     
-    // Очищаем кэш через 20 минут
     setTimeout(() => {
       clientCache.delete(cacheKey);
       if (client.is_authenticated) {
@@ -55,16 +60,13 @@ async function getOrCreateClient(token) {
 async function getOrCreateChat(client, characterId, token) {
   const cacheKey = `chat_${token}_${characterId}`;
   
-  // Проверяем кэш
   if (chatCache.has(cacheKey)) {
     return chatCache.get(cacheKey);
   }
   
   try {
-    // Подключаемся к персонажу
     await client.character.connect(characterId);
     
-    // Сохраняем информацию о чате
     const chatInfo = {
       characterId: characterId,
       chatId: client.character.chat_id,
@@ -73,7 +75,6 @@ async function getOrCreateChat(client, characterId, token) {
     
     chatCache.set(cacheKey, chatInfo);
     
-    // Очищаем кэш через 15 минут
     setTimeout(() => {
       chatCache.delete(cacheKey);
     }, 15 * 60 * 1000);
@@ -87,21 +88,10 @@ async function getOrCreateChat(client, characterId, token) {
 
 // Парсинг модели для получения ID персонажа
 function parseModelId(model) {
-  // Формат: "character-ai:CHARACTER_ID" или просто "CHARACTER_ID"
   if (model.startsWith('character-ai:')) {
     return model.substring('character-ai:'.length);
   }
   return model;
-}
-
-// Преобразование истории сообщений OpenAI в формат для отправки
-function formatMessagesForSending(messages) {
-  // Берем только последнее сообщение пользователя
-  const userMessages = messages.filter(m => m.role === 'user');
-  if (userMessages.length === 0) {
-    return null;
-  }
-  return userMessages[userMessages.length - 1].content;
 }
 
 // Основной обработчик
@@ -130,12 +120,11 @@ module.exports = async (req, res) => {
   let client = null;
   
   try {
-    // Проверка авторизации
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.status(401).json({ 
         error: {
-          message: 'Missing or invalid authorization header. Use "Bearer YOUR_CHARACTER_AI_TOKEN"',
+          message: 'Missing or invalid authorization header',
           type: 'invalid_request_error'
         }
       });
@@ -145,7 +134,6 @@ module.exports = async (req, res) => {
     const token = authHeader.substring('Bearer '.length).trim();
     const body = req.body || {};
     
-    // Валидация тела запроса
     if (!body.model || !body.messages) {
       res.status(400).json({ 
         error: {
@@ -160,13 +148,14 @@ module.exports = async (req, res) => {
     const messages = body.messages;
     const stream = body.stream || false;
     
-    // Получение текста сообщения для отправки
-    const messageText = formatMessagesForSending(messages);
+    const userMessage = messages
+      .filter(m => m.role === 'user')
+      .pop();
     
-    if (!messageText) {
+    if (!userMessage || !userMessage.content) {
       res.status(400).json({ 
         error: {
-          message: 'No user message found in messages array',
+          message: 'No user message found',
           type: 'invalid_request_error'
         }
       });
@@ -175,134 +164,67 @@ module.exports = async (req, res) => {
     
     console.log(`Processing request for character: ${characterId}`);
     
-    // Создание или получение клиента
+    // Создание клиента и отправка сообщения
     client = await getOrCreateClient(token);
-    
-    // Создание или получение чата
     const chatInfo = await getOrCreateChat(client, characterId, token);
     
-    // Отправка сообщения
     let responseText = '';
     
+    try {
+      const response = await client.character.send_message(userMessage.content, {
+        manual_turn: false,
+        char_id: characterId,
+        chat_id: chatInfo.chatId
+      });
+      
+      if (response && response.turn && response.turn.candidates) {
+        responseText = response.turn.candidates[0].raw_content || 'No response';
+      } else if (typeof response === 'string') {
+        responseText = response;
+      } else {
+        responseText = 'Unable to get response';
+      }
+    } catch (sendError) {
+      console.error('Send error:', sendError);
+      responseText = 'Error: Unable to send message to Character.AI';
+    }
+    
+    // Формируем ответ
+    const completionId = `chatcmpl-${uuidv4()}`;
+    const created = Math.floor(Date.now() / 1000);
+    
     if (stream) {
-      // Streaming mode
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
       
-      const completionId = `chatcmpl-${uuidv4()}`;
-      const created = Math.floor(Date.now() / 1000);
-      
-      try {
-        // Отправляем сообщение с streaming
-        await client.character.send_message(messageText, {
-          streaming: true,
-          callback: (token) => {
-            // Отправляем каждый токен как chunk
-            if (token) {
-              responseText += token;
-              
-              const chunk = {
-                id: completionId,
-                object: 'chat.completion.chunk',
-                created: created,
-                model: body.model,
-                choices: [{
-                  index: 0,
-                  delta: {
-                    content: token
-                  },
-                  finish_reason: null
-                }]
-              };
-              
-              res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-            }
-          }
-        });
-        
-        // Отправляем финальный chunk
-        const finalChunk = {
+      const words = responseText.split(' ');
+      for (const word of words) {
+        const chunk = {
           id: completionId,
           object: 'chat.completion.chunk',
           created: created,
           model: body.model,
           choices: [{
             index: 0,
-            delta: {},
-            finish_reason: 'stop'
+            delta: { content: word + ' ' },
+            finish_reason: null
           }]
         };
-        
-        res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
-        res.write('data: [DONE]\n\n');
-        res.end();
-        
-      } catch (error) {
-        console.error('Streaming error:', error);
-        // Отправляем ошибку в stream
-        const errorChunk = {
-          error: {
-            message: error.message,
-            type: 'stream_error'
-          }
-        };
-        res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
-        res.end();
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
       }
       
+      res.write(`data: ${JSON.stringify({
+        id: completionId,
+        object: 'chat.completion.chunk',
+        created: created,
+        model: body.model,
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }]
+      })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
     } else {
-      // Regular mode (без streaming)
-      try {
-        // Отправляем сообщение и ждем полный ответ
-        const response = await client.character.send_message(messageText, {
-          manual_turn: false,
-          char_id: characterId,
-          chat_id: chatInfo.chatId
-        });
-        
-        // Извлекаем текст ответа
-        if (response && response.turn) {
-          // Получаем последний ответ персонажа
-          const candidates = response.turn.candidates || [];
-          if (candidates.length > 0) {
-            responseText = candidates[0].raw_content || 'No response generated';
-          } else {
-            responseText = 'No response candidates found';
-          }
-        } else if (typeof response === 'string') {
-          responseText = response;
-        } else {
-          responseText = 'Unable to get response from Character.AI';
-        }
-        
-      } catch (sendError) {
-        console.error('Message send error:', sendError);
-        
-        // Пытаемся переподключиться и отправить еще раз
-        try {
-          await client.character.disconnect();
-          await client.character.connect(characterId);
-          
-          const response = await client.character.send_message(messageText);
-          
-          if (response && response.turn && response.turn.candidates) {
-            responseText = response.turn.candidates[0].raw_content || 'No response';
-          } else {
-            responseText = 'Failed to get response after reconnection';
-          }
-        } catch (retryError) {
-          console.error('Retry failed:', retryError);
-          throw new Error(`Failed to send message: ${retryError.message}`);
-        }
-      }
-      
-      // Формируем ответ в формате OpenAI
-      const completionId = `chatcmpl-${uuidv4()}`;
-      const created = Math.floor(Date.now() / 1000);
-      
-      const completion = {
+      res.status(200).json({
         id: completionId,
         object: 'chat.completion',
         created: created,
@@ -316,32 +238,25 @@ module.exports = async (req, res) => {
           finish_reason: 'stop'
         }],
         usage: {
-          prompt_tokens: Math.ceil(messageText.length / 4),
+          prompt_tokens: Math.ceil(userMessage.content.length / 4),
           completion_tokens: Math.ceil(responseText.length / 4),
-          total_tokens: Math.ceil((messageText.length + responseText.length) / 4)
+          total_tokens: Math.ceil((userMessage.content.length + responseText.length) / 4)
         }
-      };
-      
-      res.status(200).json(completion);
+      });
     }
-    
   } catch (error) {
     console.error('API Error:', error);
     
-    // Очищаем клиент из кэша при ошибке
     if (client) {
       try {
         await client.logout();
-      } catch (e) {
-        // Игнорируем ошибки при logout
-      }
+      } catch (e) {}
     }
     
     res.status(500).json({ 
       error: {
         message: error.message || 'Internal server error',
-        type: 'internal_error',
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        type: 'internal_error'
       }
     });
   }
