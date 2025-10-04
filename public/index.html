@@ -380,83 +380,63 @@
             saveData({ accessToken, characterId, chatId });
         }
 
-        async function testAPI() {
-            const token = document.getElementById('testToken').value.trim();
-            const message = document.getElementById('testMessage').value.trim();
-            
-            if (!token || !message) {
-                alert('Пожалуйста, заполните все поля');
-                return;
-            }
-            
-            const testResult = document.getElementById('testResult');
-            const testOutput = document.getElementById('testOutput');
-            
-            testResult.classList.add('show');
-            testOutput.textContent = 'Отправка запроса...';
-            
-            try {
-                const response = await fetch('/api/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                        model: 'character-ai',
-                        messages: [
-                            { role: 'user', content: message }
-                        ]
-                    })
-                });
-                
-                const data = await response.json();
-                testOutput.textContent = JSON.stringify(data, null, 2);
-                
-                // Сохранение chat ID если есть
-                if (response.headers.get('X-Chat-Id')) {
-                    const chatId = response.headers.get('X-Chat-Id');
-                    saveLastChatId(chatId);
-                }
-                
-            } catch (error) {
-                testOutput.textContent = `Ошибка: ${error.message}`;
-            }
+        // Обновите функцию testAPI
+async function testAPI() {
+    const token = document.getElementById('testToken').value.trim();
+    const message = document.getElementById('testMessage').value.trim();
+    
+    if (!token || !message) {
+        alert('Пожалуйста, заполните все поля');
+        return;
+    }
+    
+    const testResult = document.getElementById('testResult');
+    const testOutput = document.getElementById('testOutput');
+    
+    testResult.classList.add('show');
+    testOutput.textContent = 'Отправка запроса...';
+    
+    try {
+        // Сначала проверяем токен
+        const [accessToken] = token.split(':');
+        const testResponse = await fetch(`/api/test?token=${accessToken}`);
+        const testData = await testResponse.json();
+        
+        if (!testData.success) {
+            testOutput.textContent = `Ошибка токена: ${JSON.stringify(testData, null, 2)}`;
+            return;
         }
-
-        async function loadChats() {
-            const token = document.getElementById('chatsToken').value.trim();
-            
-            if (!token) {
-                alert('Введите Access Token');
-                return;
-            }
-            
-            const chatsResult = document.getElementById('chatsResult');
-            const chatsList = document.getElementById('chatsList');
-            
-            chatsResult.classList.add('show');
-            chatsList.innerHTML = 'Загрузка...';
-            
-            try {
-                const response = await fetch(`/api/characters?token=${token}`);
-                const data = await response.json();
-                
-                if (data.success && data.chats) {
-                    chatsList.innerHTML = data.chats.map(chat => `
-                        <div style="padding: 10px; margin: 10px 0; background: #f8f9fa; border-radius: 8px;">
-                            <strong>Chat ID:</strong> ${chat.chat_id || 'N/A'}<br>
-                            <strong>Character:</strong> ${chat.character_name || 'Unknown'}<br>
-                            <button onclick="copyText('${chat.chat_id}')">Копировать ID</button>
-                        </div>
-                    `).join('');
-                } else {
-                    chatsList.innerHTML = 'Нет доступных чатов';
-                }
-            } catch (error) {
-                chatsList.innerHTML = `Ошибка: ${error.message}`;
-            }
+        
+        // Отправляем сообщение
+        const response = await fetch('/api/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                model: 'character-ai',
+                messages: [
+                    { role: 'user', content: message }
+                ],
+                stream: false
+            })
+        });
+        
+        const data = await response.json();
+        testOutput.textContent = JSON.stringify(data, null, 2);
+        
+        // Сохранение chat ID если есть
+        const chatId = response.headers.get('X-Chat-Id');
+        if (chatId) {
+            saveLastChatId(chatId);
+            console.log('Chat ID:', chatId);
         }
+        
+    } catch (error) {
+        testOutput.textContent = `Ошибка: ${error.message}`;
+    }
+}
 
         function copyToClipboard(elementId) {
             const text = document.getElementById(elementId).textContent;
